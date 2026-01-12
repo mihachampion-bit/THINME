@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Контроль Веса и Питания v2.1 (Recovery)</title>
+    <title>Контроль Веса и Питания v2.2</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -11,14 +11,13 @@
         .modal { display: none; position: fixed; z-index: 50; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
         .modal.active { display: flex; }
         input[type="number"]::-webkit-inner-spin-button { display: none; }
-        .tab-active { border-bottom: 3px solid #4f46e5; color: #4f46e5; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen pb-10">
 
     <nav class="bg-indigo-700 text-white p-4 shadow-xl sticky top-0 z-40">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="font-bold text-lg leading-tight">Мой Дневник</h1>
+            <h1 class="font-bold text-lg leading-tight">Мой прогресс</h1>
             <div class="flex gap-2">
                 <button onclick="openAnalytics()" class="bg-indigo-900 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider">Аналитика</button>
                 <button onclick="exportToExcel()" class="bg-emerald-600 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider">Excel</button>
@@ -27,15 +26,11 @@
     </nav>
 
     <div class="container mx-auto p-4">
-        <div id="recoveryAlert" class="hidden mb-4 p-3 bg-green-100 border border-green-200 text-green-700 rounded-xl text-sm font-medium">
-            ✅ Данные из предыдущей версии успешно восстановлены!
-        </div>
-
         <div class="bg-white p-6 rounded-2xl shadow-md mb-6 border border-slate-200">
-            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Выбрать дату</label>
+            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Выбрать дату взвешивания</label>
             <div class="flex gap-2">
                 <input type="date" id="newDateInput" class="flex-1 border-slate-200 border-2 p-2.5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                <button onclick="addDay()" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all">Добавить</button>
+                <button onclick="addDay()" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 active:scale-95 transition-all">Добавить</button>
             </div>
         </div>
 
@@ -48,7 +43,7 @@
                 </thead>
                 <tbody id="tableBody">
                     <tr id="rowWeight" class="border-b border-slate-100">
-                        <td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Вес (У / В)</td>
+                        <td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Вес (Утро / Вечер)</td>
                     </tr>
                     <tr id="rowFood">
                         <td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Еда (ккал)</td>
@@ -61,17 +56,17 @@
     <div id="foodModal" class="modal items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
             <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h2 class="text-xl font-black text-slate-800" id="modalTitle">Питание</h2>
+                <h2 class="text-xl font-black text-slate-800" id="modalTitle">Запись еды</h2>
                 <button onclick="closeModal()" class="text-slate-400 text-3xl">&times;</button>
             </div>
             <div id="foodItemsContainer" class="p-6 overflow-y-auto space-y-4 flex-1 bg-white"></div>
             <div class="p-6 border-t border-slate-100 bg-slate-50 space-y-4">
-                <button onclick="addFoodRow()" class="w-full border-2 border-dashed border-indigo-300 text-indigo-600 py-3 rounded-2xl font-bold">+ Добавить строку</button>
+                <button onclick="addFoodRow()" class="w-full border-2 border-dashed border-indigo-300 text-indigo-600 py-3 rounded-2xl font-bold hover:bg-indigo-50">+ Добавить блюдо</button>
                 <div class="flex justify-between items-center px-2">
-                    <span class="text-slate-500 font-bold uppercase text-xs">Итог:</span>
+                    <span class="text-slate-500 font-bold uppercase text-xs">Итого за сегодня:</span>
                     <span class="text-2xl font-black text-indigo-600"><span id="modalTotalKcal">0</span> <small class="text-sm font-normal text-slate-400">ккал</small></span>
                 </div>
-                <button onclick="saveFood()" class="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold">Сохранить</button>
+                <button onclick="saveFood()" class="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold hover:bg-indigo-700 shadow-lg transition-all">Сохранить</button>
             </div>
         </div>
     </div>
@@ -83,61 +78,29 @@
                 <button onclick="closeAnalytics()" class="text-3xl text-slate-300">&times;</button>
             </div>
             <div class="space-y-8">
-                <div class="h-80 bg-slate-50 p-4 rounded-2xl"><canvas id="weightChart"></canvas></div>
-                <div class="h-80 bg-slate-50 p-4 rounded-2xl"><canvas id="foodChart"></canvas></div>
+                <div class="h-64 sm:h-80 bg-slate-50 p-4 rounded-2xl border border-slate-100"><canvas id="weightChart"></canvas></div>
+                <div class="h-64 sm:h-80 bg-slate-50 p-4 rounded-2xl border border-slate-100"><canvas id="foodChart"></canvas></div>
             </div>
         </div>
     </div>
 
     <script>
-        // Единый ключ базы данных для всех будущих версий
         const FINAL_DB_KEY = 'health_tracker_final_storage';
         
-        // Список старых ключей для миграции
-        const OLD_KEYS = ['diet_db', 'weight_tracker_db'];
-
-        // База знаний
         const calorieLibrary = {
             "курица": 170, "грудка": 113, "котлета": 250, "рис": 130, "басмати": 130, "говядина": 250, 
             "масло": 717, "сливочное": 717, "брокколи": 34, "яйцо": 155, "хлеб": 250, "гречка": 132, 
-            "рыба": 150, "творог": 100, "огурец": 15, "помидор": 18, "сыр": 350, 
-            "печенье": 450, "протеиновое": 380, "сметана": 200, "молоко": 60
+            "рыба": 150, "творог": 100, "огурец": 15, "помидор": 18, "сыр": 350, "печенье": 450, 
+            "протеиновое": 380, "сметана": 200, "молоко": 60, "картофель": 80, "макароны": 150,
+            "свинина": 280, "суп": 50, "борщ": 60, "салат": 40, "яблоко": 52, "банан": 90
         };
 
         let db = { days: {}, library: {} };
-
-        // ФУНКЦИЯ ВОССТАНОВЛЕНИЯ ДАННЫХ
-        function migrateData() {
-            let migrated = false;
-            let currentData = localStorage.getItem(FINAL_DB_KEY);
-            
-            if (currentData) {
-                db = JSON.parse(currentData);
-            }
-
-            OLD_KEYS.forEach(oldKey => {
-                let oldData = localStorage.getItem(oldKey);
-                if (oldData) {
-                    let parsedOld = JSON.parse(oldData);
-                    // Объединяем дни
-                    db.days = Object.assign({}, parsedOld.days || {}, db.days);
-                    // Объединяем библиотеку продуктов
-                    db.library = Object.assign({}, parsedOld.library || {}, db.library);
-                    // Удаляем старый ключ, чтобы не мигрировать вечно
-                    localStorage.removeItem(oldKey);
-                    migrated = true;
-                }
-            });
-
-            if (migrated) {
-                localStorage.setItem(FINAL_DB_KEY, JSON.stringify(db));
-                document.getElementById('recoveryAlert').classList.remove('hidden');
-                setTimeout(() => document.getElementById('recoveryAlert').classList.add('hidden'), 5000);
-            }
-        }
+        let activeDate = null;
 
         function init() {
-            migrateData();
+            const stored = localStorage.getItem(FINAL_DB_KEY);
+            if (stored) db = JSON.parse(stored);
             renderTable();
         }
 
@@ -157,25 +120,19 @@
         }
 
         function deleteDay(date) {
-            if(confirm(`Удалить ${date}?`)) {
-                delete db.days[date];
-                save();
-            }
+            if(confirm(`Удалить ${date}?`)) { delete db.days[date]; save(); }
         }
 
         function renderTable() {
             const header = document.getElementById('tableHeader');
-            const rowWeight = document.getElementById('rowWeight');
-            const rowFood = document.getElementById('rowFood');
+            const rowW = document.getElementById('rowWeight');
+            const rowF = document.getElementById('rowFood');
 
             header.innerHTML = '<th class="p-4 border-r border-slate-200 min-w-[140px] text-slate-400 font-bold uppercase text-[10px] tracking-widest">Параметры</th>';
-            rowWeight.innerHTML = '<td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Вес (У / В)</td>';
-            rowFood.innerHTML = '<td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Еда (ккал)</td>';
+            rowW.innerHTML = '<td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Вес (У/В)</td>';
+            rowF.innerHTML = '<td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700 text-xs">Еда (ккал)</td>';
 
-            // Сортировка: НОВЫЕ СЛЕВА
-            const sortedDates = Object.keys(db.days).sort((a, b) => {
-                return new Date(b.split('.').reverse().join('-')) - new Date(a.split('.').reverse().join('-'));
-            });
+            const sortedDates = Object.keys(db.days).sort((a, b) => new Date(b.split('.').reverse().join('-')) - new Date(a.split('.').reverse().join('-')));
 
             sortedDates.forEach(date => {
                 const th = document.createElement('th');
@@ -187,84 +144,105 @@
                 const tdW = document.createElement('td');
                 tdW.className = 'p-3 border-r border-slate-100';
                 tdW.innerHTML = `<div class="flex gap-1">
-                    <input type="number" step="0.1" value="${db.days[date].morning}" class="w-1/2 border-slate-100 border p-2 rounded-lg text-xs text-center" onchange="updateWeight('${date}', 'morning', this.value)">
-                    <input type="number" step="0.1" value="${db.days[date].evening}" class="w-1/2 border-slate-100 border p-2 rounded-lg text-xs text-center" onchange="updateWeight('${date}', 'evening', this.value)">
+                    <input type="number" step="0.1" value="${db.days[date].morning}" placeholder="У" class="w-1/2 border-slate-100 border p-2 rounded-lg text-xs text-center focus:border-indigo-300 focus:outline-none" onchange="updateVal('${date}','morning',this.value)">
+                    <input type="number" step="0.1" value="${db.days[date].evening}" placeholder="В" class="w-1/2 border-slate-100 border p-2 rounded-lg text-xs text-center focus:border-indigo-300 focus:outline-none" onchange="updateVal('${date}','evening',this.value)">
                 </div>`;
-                rowWeight.appendChild(tdW);
+                rowW.appendChild(tdW);
 
                 const tdF = document.createElement('td');
                 tdF.className = 'p-3 border-r border-slate-100 text-center';
-                const totalKcal = db.days[date].food.reduce((sum, item) => sum + (Number(item.kcal) || 0), 0);
+                const total = db.days[date].food.reduce((s, i) => s + (Number(i.kcal) || 0), 0);
                 tdF.innerHTML = `<button onclick="openFood('${date}')" class="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl text-sm font-black w-full hover:bg-indigo-100 border border-indigo-100">
-                    ${Math.round(totalKcal)}</button>`;
-                rowFood.appendChild(tdF);
+                    ${Math.round(total)}</button>`;
+                rowF.appendChild(tdF);
             });
         }
 
-        function updateWeight(date, time, val) {
-            db.days[date][time] = val;
-            save();
-        }
+        function updateVal(date, key, val) { db.days[date][key] = val; save(); }
 
         function openFood(date) {
             activeDate = date;
-            document.getElementById('modalTitle').innerText = `Еда: ${date}`;
-            document.getElementById('foodItemsContainer').innerHTML = '';
-            db.days[date].food.forEach((item, index) => addFoodRow(item, index));
+            document.getElementById('modalTitle').innerText = `Питание: ${date}`;
+            const container = document.getElementById('foodItemsContainer');
+            container.innerHTML = '';
+            db.days[date].food.forEach(item => addFoodRow(item));
             if(db.days[date].food.length === 0) addFoodRow();
             calculateModalTotal();
             document.getElementById('foodModal').classList.add('active');
         }
 
         function addFoodRow(item = {name: '', b: '', j: '', u: '', kcal: ''}) {
-            const container = document.getElementById('foodItemsContainer');
             const div = document.createElement('div');
-            div.className = "bg-slate-50 p-4 rounded-2xl border border-slate-200 relative";
+            div.className = "bg-slate-50 p-4 rounded-2xl border border-slate-200";
             div.innerHTML = `
-                <input type="text" value="${item.name}" list="food-library" placeholder="Описание блюда..." 
-                    onchange="smartEstimate(this)" class="food-name w-full mb-3 p-3 border-slate-200 border-2 rounded-xl font-bold text-sm focus:outline-none">
+                <input type="text" value="${item.name}" placeholder="Напр: 200г риса и котлета" 
+                    onchange="smartEstimate(this)" class="food-name w-full mb-3 p-3 border-slate-200 border-2 rounded-xl font-bold text-sm focus:border-indigo-400 focus:outline-none">
                 <div class="grid grid-cols-4 gap-2">
-                    <input type="number" value="${item.b}" placeholder="Б" class="food-b w-full border border-slate-100 p-2 rounded-lg text-xs">
-                    <input type="number" value="${item.j}" placeholder="Ж" class="food-j w-full border border-slate-100 p-2 rounded-lg text-xs">
-                    <input type="number" value="${item.u}" placeholder="У" class="food-u w-full border border-slate-100 p-2 rounded-lg text-xs">
-                    <input type="number" value="${item.kcal}" oninput="calculateModalTotal()" class="food-kcal w-full border border-indigo-100 p-2 rounded-lg text-xs font-black text-indigo-600 bg-white">
+                    <input type="number" value="${item.b}" placeholder="Б" class="food-b w-full border border-slate-200 p-2 rounded-lg text-xs">
+                    <input type="number" value="${item.j}" placeholder="Ж" class="food-j w-full border border-slate-200 p-2 rounded-lg text-xs">
+                    <input type="number" value="${item.u}" placeholder="У" class="food-u w-full border border-slate-200 p-2 rounded-lg text-xs">
+                    <input type="number" value="${item.kcal}" placeholder="Ккал" oninput="calculateModalTotal()" class="food-kcal w-full border-2 border-indigo-200 p-2 rounded-lg text-xs font-black text-indigo-600 bg-white">
                 </div>`;
-            container.appendChild(div);
+            document.getElementById('foodItemsContainer').appendChild(div);
         }
 
         function smartEstimate(input) {
             const text = input.value.toLowerCase();
             const parent = input.parentElement;
+            
+            // 1. Проверка в личном словаре (ранее введенное)
             if(db.library[input.value]) {
                 const lib = db.library[input.value];
-                parent.querySelector('.food-b').value = lib.b; parent.querySelector('.food-j').value = lib.j;
-                parent.querySelector('.food-u').value = lib.u; parent.querySelector('.food-kcal').value = lib.kcal;
+                parent.querySelector('.food-b').value = lib.b;
+                parent.querySelector('.food-j').value = lib.j;
+                parent.querySelector('.food-u').value = lib.u;
+                parent.querySelector('.food-kcal').value = lib.kcal;
                 calculateModalTotal(); return;
             }
+
+            // 2. Умная оценка
             let estKcal = 0; let found = false;
+            let weightMatch = text.match(/(\d+)\s*(г|гр)/);
+            let multiplier = weightMatch ? (parseInt(weightMatch[1]) / 100) : 1;
+
             Object.keys(calorieLibrary).forEach(key => {
                 if (text.includes(key)) {
-                    let weightMatch = text.match(/(\d+)\s*(г|гр)/);
-                    let mult = weightMatch ? (parseInt(weightMatch[1]) / 100) : 1;
-                    estKcal += calorieLibrary[key] * mult; found = true;
+                    estKcal += (calorieLibrary[key] * multiplier);
+                    found = true;
                 }
             });
-            if (found) { parent.querySelector('.food-kcal').value = Math.round(estKcal); calculateModalTotal(); }
+
+            // 3. Заглушка, если ничего не найдено, но текст есть
+            if (!found && text.length > 2) {
+                estKcal = 250; // Средняя порция "на глазок"
+            }
+
+            if (estKcal > 0) {
+                parent.querySelector('.food-kcal').value = Math.round(estKcal);
+                calculateModalTotal();
+            }
         }
 
         function calculateModalTotal() {
             let total = 0;
-            document.querySelectorAll('.food-kcal').forEach(input => total += (Number(input.value) || 0));
+            document.querySelectorAll('.food-kcal').forEach(i => total += (Number(i.value) || 0));
             document.getElementById('modalTotalKcal').innerText = Math.round(total);
         }
 
         function saveFood() {
-            const rows = document.querySelectorAll('#foodItemsContainer > div');
             const foodData = [];
-            rows.forEach(row => {
-                const name = row.querySelector('.food-name').value; if(!name) return;
-                const item = { name, b: row.querySelector('.food-b').value, j: row.querySelector('.food-j').value, u: row.querySelector('.food-u').value, kcal: row.querySelector('.food-kcal').value };
-                foodData.push(item); db.library[name] = item;
+            document.querySelectorAll('#foodItemsContainer > div').forEach(row => {
+                const name = row.querySelector('.food-name').value;
+                if(!name) return;
+                const item = {
+                    name, 
+                    b: row.querySelector('.food-b').value, 
+                    j: row.querySelector('.food-j').value, 
+                    u: row.querySelector('.food-u').value, 
+                    kcal: row.querySelector('.food-kcal').value || 0
+                };
+                foodData.push(item);
+                db.library[name] = item;
             });
             db.days[activeDate].food = foodData;
             save(); closeModal();
@@ -274,20 +252,18 @@
 
         function openAnalytics() {
             document.getElementById('analyticsModal').classList.add('active');
-            const dates = Object.keys(db.days).sort((a, b) => new Date(a.split('.').reverse().join('-')) - new Date(b.split('.').reverse().join('-')));
-            const weights = dates.map(d => (Number(db.days[d].morning) + Number(db.days[d].evening)) / 2 || null);
-            const kcals = dates.map(d => db.days[d].food.reduce((s, i) => s + (Number(i.kcal) || 0), 0));
+            const dates = Object.keys(db.days).sort((a,b) => new Date(a.split('.').reverse().join('-')) - new Date(b.split('.').reverse().join('-')));
+            const weights = dates.map(d => (Number(db.days[d].morning) + Number(db.days[d].evening))/2 || null);
+            const kcals = dates.map(d => db.days[d].food.reduce((s,i) => s + (Number(i.kcal)||0), 0));
 
             if(window.wChart) window.wChart.destroy();
-            window.wChart = new Chart(document.getElementById('weightChart').getContext('2d'), {
-                type: 'line', data: { labels: dates, datasets: [{ label: 'Вес (кг)', data: weights, borderColor: '#4f46e5', tension: 0.3 }] },
-                options: { responsive: true, maintainAspectRatio: false }
+            window.wChart = new Chart(document.getElementById('weightChart'), {
+                type: 'line', data: { labels: dates, datasets: [{ label: 'Вес (кг)', data: weights, borderColor: '#4f46e5', tension: 0.3 }] }
             });
 
             if(window.fChart) window.fChart.destroy();
-            window.fChart = new Chart(document.getElementById('foodChart').getContext('2d'), {
-                type: 'bar', data: { labels: dates, datasets: [{ label: 'Ккал', data: kcals, backgroundColor: '#f97316' }] },
-                options: { responsive: true, maintainAspectRatio: false }
+            window.fChart = new Chart(document.getElementById('foodChart'), {
+                type: 'bar', data: { labels: dates, datasets: [{ label: 'Ккал за день', data: kcals, backgroundColor: '#f97316' }] }
             });
         }
 
@@ -296,12 +272,12 @@
         function exportToExcel() {
             const data = Object.keys(db.days).map(d => ({
                 "Дата": d, "Вес У": db.days[d].morning, "Вес В": db.days[d].evening,
-                "Ккал": db.days[d].food.reduce((s, i) => s + Number(i.kcal || 0), 0)
+                "Ккал": db.days[d].food.reduce((s,i) => s + Number(i.kcal||0), 0)
             }));
             const ws = XLSX.utils.json_to_sheet(data);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Дневник");
-            XLSX.writeFile(wb, `Diet_Data.xlsx`);
+            XLSX.writeFile(wb, "Diet_Report.xlsx");
         }
 
         init();
