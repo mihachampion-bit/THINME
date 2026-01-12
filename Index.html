@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Контроль Веса и Питания</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .modal { display: none; position: fixed; z-index: 50; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+        .modal.active { display: flex; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen pb-20">
+
+    <nav class="bg-blue-600 text-white p-4 shadow-lg sticky top-0 z-40">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="font-bold text-lg text-center leading-tight">Дневник Здоровья</h1>
+            <div class="space-x-2">
+                <button onclick="openAnalytics()" class="bg-blue-800 px-3 py-1 rounded text-sm">Аналитика</button>
+                <button onclick="exportToExcel()" class="bg-green-600 px-3 py-1 rounded text-sm">Excel</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto p-2">
+        <div class="bg-white p-4 rounded-lg shadow-sm mb-4 flex gap-2 items-end">
+            <div class="flex-1">
+                <label class="block text-xs font-bold text-gray-600 uppercase">Новая дата</label>
+                <input type="date" id="newDateInput" class="w-full border p-2 rounded mt-1">
+            </div>
+            <button onclick="addDay()" class="bg-blue-500 text-white px-6 py-2 rounded font-bold hover:bg-blue-600 transition">Добавить</button>
+        </div>
+
+        <div class="overflow-x-auto bg-white rounded-lg shadow">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-50 border-b" id="tableHeader">
+                        <th class="p-3 border-r min-w-[120px]">Параметр</th>
+                        </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr id="rowWeight" class="border-b">
+                        <td class="p-3 font-bold bg-gray-50 border-r">Вес (У/В)</td>
+                    </tr>
+                    <tr id="rowFood">
+                        <td class="p-3 font-bold bg-gray-50 border-r">Съел (ккал)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="foodModal" class="modal items-center justify-center p-4">
+        <div class="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h2 class="text-xl font-bold" id="modalTitle">Питание</h2>
+                <button onclick="closeModal()" class="text-2xl">&times;</button>
+            </div>
+            
+            <div id="foodItemsContainer" class="space-y-3 mb-6">
+                </div>
+
+            <button onclick="addFoodRow()" class="w-full border-2 border-dashed border-blue-400 text-blue-600 py-2 rounded-lg mb-4 font-medium">+ Добавить продукт</button>
+            
+            <div class="bg-gray-50 p-4 rounded-lg flex justify-between font-bold text-lg">
+                <span>Итого ккал:</span>
+                <span id="modalTotalKcal">0</span>
+            </div>
+            
+            <button onclick="saveFood()" class="w-full bg-blue-600 text-white py-3 rounded-xl mt-4 font-bold">Сохранить всё</button>
+        </div>
+    </div>
+
+    <div id="analyticsModal" class="modal items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-xl w-full max-w-4xl h-[90vh] overflow-y-auto p-4">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h2 class="text-xl font-bold text-center">Аналитика</h2>
+                <button onclick="closeAnalytics()" class="text-3xl">&times;</button>
+            </div>
+            <div class="h-64 sm:h-96">
+                <canvas id="weightChart"></canvas>
+            </div>
+            <div class="h-64 sm:h-96 mt-8 border-t pt-8">
+                <canvas id="foodChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let db = JSON.parse(localStorage.getItem('diet_db')) || { days: {}, library: {} };
+        let activeDate = null;
+
+        // Инициализация при загрузке
+        function init() {
+            renderTable();
+        }
+
+        function save() {
+            localStorage.setItem('diet_db', JSON.stringify(db));
+            renderTable();
+        }
+
+        function addDay() {
+            const dateVal = document.getElementById('newDateInput').value;
+            if (!dateVal) return;
+            const formatted = dateVal.split('-').reverse().join('.'); // ДД.ММ.ГГГГ
+            if (!db.days[formatted]) {
+                db.days[formatted] = { morning: '', evening: '', food: [] };
+                save();
+            }
+        }
+
+        function deleteDay(date) {
+            if(confirm(`Удалить данные за ${date}?`)) {
+                delete db.days[date];
+                save();
+            }
+        }
+
+        function renderTable() {
+            const header = document.getElementById('tableHeader');
+            const rowWeight = document.getElementById('rowWeight');
+            const rowFood = document.getElementById('rowFood');
+
+            // Очистка
+            header.innerHTML = '<th class="p-3 border-r min-w-[120px]">Параметр</th>';
+            rowWeight.innerHTML = '<td class="p-3 font-bold bg-gray-50 border-r text-sm">Вес (У / В)</td>';
+            rowFood.innerHTML = '<td class="p-3 font-bold bg-gray-50 border-r text-sm">Съел (ккал)</td>';
+
+            // Сортировка дат
+            const sortedDates = Object.keys(db.days).sort((a, b) => {
+                return new Date(a.split('.').reverse().join('-')) - new Date(b.split('.').reverse().join('-'));
+            });
+
+            sortedDates.forEach(date => {
+                // Header
+                const th = document.createElement('th');
+                th.className = 'p-3 border-r min-w-[140px] relative group text-center';
+                th.innerHTML = `
+                    <span class="block text-sm font-medium">${date}</span>
+                    <button onclick="deleteDay('${date}')" class="text-red-500 text-[10px] hidden group-hover:inline">удалить</button>
+                `;
+                header.appendChild(th);
+
+                // Weight
+                const tdW = document.createElement('td');
+                tdW.className = 'p-2 border-r';
+                tdW.innerHTML = `
+                    <div class="flex gap-1">
+                        <input type="number" step="0.1" value="${db.days[date].morning}" placeholder="У" 
+                            class="w-1/2 border text-xs p-1 rounded" onchange="updateWeight('${date}', 'morning', this.value)">
+                        <input type="number" step="0.1" value="${db.days[date].evening}" placeholder="В" 
+                            class="w-1/2 border text-xs p-1 rounded" onchange="updateWeight('${date}', 'evening', this.value)">
+                    </div>
+                `;
+                rowWeight.appendChild(tdW);
+
+                // Food
+                const tdF = document.createElement('td');
+                tdF.className = 'p-2 border-r text-center';
+                const totalKcal = db.days[date].food.reduce((sum, item) => sum + (Number(item.kcal) || 0), 0);
+                tdF.innerHTML = `
+                    <button onclick="openFood('${date}')" class="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm font-bold w-full hover:bg-orange-200">
+                        ${totalKcal || 0}
+                    </button>
+                `;
+                rowFood.appendChild(tdF);
+            });
+        }
+
+        function updateWeight(date, time, val) {
+            db.days[date][time] = val;
+            save();
+        }
+
+        // Логика питания
+        function openFood(date) {
+            activeDate = date;
+            document.getElementById('modalTitle').innerText = `Питание: ${date}`;
+            document.getElementById('foodItemsContainer').innerHTML = '';
+            
+            db.days[date].food.forEach((item, index) => addFoodRow(item, index));
+            if(db.days[date].food.length === 0) addFoodRow();
+            
+            calculateModalTotal();
+            document.getElementById('foodModal').classList.add('active');
+        }
+
+        function addFoodRow(item = {name: '', b: '', j: '', u: '', kcal: ''}) {
+            const container = document.getElementById('foodItemsContainer');
+            const div = document.createElement('div');
+            div.className = "bg-gray-50 p-3 rounded border relative";
+            div.innerHTML = `
+                <input type="text" value="${item.name}" list="food-library" placeholder="Что съели?" onchange="checkLibrary(this)"
+                    class="food-name w-full mb-2 p-2 border rounded font-bold text-sm">
+                <div class="grid grid-cols-4 gap-2">
+                    <div><label class="text-[10px] block">Б</label><input type="number" value="${item.b}" class="food-b w-full border p-1 text-xs"></div>
+                    <div><label class="text-[10px] block">Ж</label><input type="number" value="${item.j}" class="food-j w-full border p-1 text-xs"></div>
+                    <div><label class="text-[10px] block">У</label><input type="number" value="${item.u}" class="food-u w-full border p-1 text-xs"></div>
+                    <div><label class="text-[10px] block">Ккал</label><input type="number" value="${item.kcal}" oninput="calculateModalTotal()" class="food-kcal w-full border p-1 text-xs font-bold bg-white"></div>
+                </div>
+                <datalist id="food-library">${Object.keys(db.library).map(name => `<option value="${name}">`).join('')}</datalist>
+            `;
+            container.appendChild(div);
+        }
+
+        function checkLibrary(input) {
+            const name = input.value;
+            if(db.library[name]) {
+                const parent = input.parentElement;
+                parent.querySelector('.food-b').value = db.library[name].b;
+                parent.querySelector('.food-j').value = db.library[name].j;
+                parent.querySelector('.food-u').value = db.library[name].u;
+                parent.querySelector('.food-kcal').value = db.library[name].kcal;
+                calculateModalTotal();
+            }
+        }
+
+        function calculateModalTotal() {
+            let total = 0;
+            document.querySelectorAll('.food-kcal').forEach(input => {
+                let val = Number(input.value);
+                // Если пусто - "на глазок"
+                if (val === 0) val = 0; 
+                total += val;
+            });
+            document.getElementById('modalTotalKcal').innerText = total;
+        }
+
+        function saveFood() {
+            const rows = document.querySelectorAll('#foodItemsContainer > div');
+            const foodData = [];
+            rows.forEach(row => {
+                const name = row.querySelector('.food-name').value;
+                if(!name) return;
+                
+                const item = {
+                    name: name,
+                    b: row.querySelector('.food-b').value,
+                    j: row.querySelector('.food-j').value,
+                    u: row.querySelector('.food-u').value,
+                    kcal: row.querySelector('.food-kcal').value || "200" // Базовая оценка на глазок если пусто
+                };
+                foodData.push(item);
+                // Сохраняем в библиотеку для автоподстановки
+                db.library[name] = item;
+            });
+            db.days[activeDate].food = foodData;
+            save();
+            closeModal();
+        }
+
+        function closeModal() { document.getElementById('foodModal').classList.remove('active'); }
+
+        // Аналитика
+        function openAnalytics() {
+            document.getElementById('analyticsModal').classList.add('active');
+            const dates = Object.keys(db.days).sort((a, b) => new Date(a.split('.').reverse().join('-')) - new Date(b.split('.').reverse().join('-')));
+            const weights = dates.map(d => (Number(db.days[d].morning) + Number(db.days[d].evening))/2 || null);
+            const kcals = dates.map(d => db.days[d].food.reduce((s, i) => s + (Number(i.kcal) || 0), 0));
+
+            new Chart(document.getElementById('weightChart'), {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{ label: 'Средний Вес (кг)', data: weights, borderColor: 'rgb(59, 130, 246)', tension: 0.1 }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            new Chart(document.getElementById('foodChart'), {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [{ label: 'Калории за день', data: kcals, backgroundColor: 'rgba(249, 115, 22, 0.5)' }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        function closeAnalytics() { document.getElementById('analyticsModal').classList.remove('active'); }
+
+        // Экспорт в Excel (через SheetJS)
+        function exportToExcel() {
+            const data = [];
+            const sortedDates = Object.keys(db.days).sort();
+            
+            sortedDates.forEach(date => {
+                const day = db.days[date];
+                const total = day.food.reduce((acc, curr) => ({
+                    b: acc.b + Number(curr.b || 0),
+                    j: acc.j + Number(curr.j || 0),
+                    u: acc.u + Number(curr.u || 0),
+                    k: acc.k + Number(curr.kcal || 0)
+                }), {b:0, j:0, u:0, k:0});
+
+                data.push({
+                    "Дата": date,
+                    "Вес Утро": day.morning,
+                    "Вес Вечер": day.evening,
+                    "Белки": total.b,
+                    "Жиры": total.j,
+                    "Углеводы": total.u,
+                    "Ккал": total.k
+                });
+            });
+
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Дневник");
+            XLSX.writeFile(wb, `Diet_Data_${new Date().toLocaleDateString()}.xlsx`);
+        }
+
+        init();
+    </script>
+</body>
+</html>
