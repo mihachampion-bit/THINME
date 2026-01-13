@@ -76,6 +76,8 @@
         </div>
     </div>
 
+    <datalist id="food-library"></datalist>
+
     <div id="analyticsModal" class="modal items-center justify-center p-2 backdrop-blur-md">
         <div class="bg-white rounded-3xl w-full max-w-5xl h-[90vh] overflow-y-auto p-6 shadow-2xl">
             <div class="flex justify-between items-center mb-8">
@@ -90,13 +92,9 @@
     </div>
 
     <script>
-        // Единый ключ базы данных для всех будущих версий
         const FINAL_DB_KEY = 'health_tracker_final_storage';
-        
-        // Список старых ключей для миграции
         const OLD_KEYS = ['diet_db', 'weight_tracker_db'];
 
-        // База знаний
         const calorieLibrary = {
             "курица": 170, "грудка": 113, "котлета": 250, "рис": 130, "басмати": 130, "говядина": 250, 
             "масло": 717, "сливочное": 717, "брокколи": 34, "яйцо": 155, "хлеб": 250, "гречка": 132, 
@@ -105,25 +103,19 @@
         };
 
         let db = { days: {}, library: {} };
+        let activeDate = null;
 
-        // ФУНКЦИЯ ВОССТАНОВЛЕНИЯ ДАННЫХ
         function migrateData() {
             let migrated = false;
             let currentData = localStorage.getItem(FINAL_DB_KEY);
-            
-            if (currentData) {
-                db = JSON.parse(currentData);
-            }
+            if (currentData) db = JSON.parse(currentData);
 
             OLD_KEYS.forEach(oldKey => {
                 let oldData = localStorage.getItem(oldKey);
                 if (oldData) {
                     let parsedOld = JSON.parse(oldData);
-                    // Объединяем дни
                     db.days = Object.assign({}, parsedOld.days || {}, db.days);
-                    // Объединяем библиотеку продуктов
                     db.library = Object.assign({}, parsedOld.library || {}, db.library);
-                    // Удаляем старый ключ, чтобы не мигрировать вечно
                     localStorage.removeItem(oldKey);
                     migrated = true;
                 }
@@ -136,13 +128,33 @@
             }
         }
 
+        // Обновление выпадающего списка опций
+        function updateDataList() {
+            const list = document.getElementById('food-library');
+            list.innerHTML = '';
+            // Добавляем встроенную библиотеку
+            Object.keys(calorieLibrary).forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item;
+                list.appendChild(opt);
+            });
+            // Добавляем пользовательскую библиотеку
+            Object.keys(db.library).forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item;
+                list.appendChild(opt);
+            });
+        }
+
         function init() {
             migrateData();
+            updateDataList();
             renderTable();
         }
 
         function save() {
             localStorage.setItem(FINAL_DB_KEY, JSON.stringify(db));
+            updateDataList();
             renderTable();
         }
 
@@ -172,7 +184,6 @@
             rowWeight.innerHTML = '<td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Вес (У / В)</td>';
             rowFood.innerHTML = '<td class="p-4 font-bold bg-slate-50 border-r border-slate-200 text-sm text-slate-700">Еда (ккал)</td>';
 
-            // Сортировка: НОВЫЕ СЛЕВА
             const sortedDates = Object.keys(db.days).sort((a, b) => {
                 return new Date(b.split('.').reverse().join('-')) - new Date(a.split('.').reverse().join('-'));
             });
@@ -233,18 +244,26 @@
         }
 
         function smartEstimate(input) {
-            const text = input.value.toLowerCase();
+            const text = input.value;
             const parent = input.parentElement;
-            if(db.library[input.value]) {
-                const lib = db.library[input.value];
-                parent.querySelector('.food-b').value = lib.b; parent.querySelector('.food-j').value = lib.j;
-                parent.querySelector('.food-u').value = lib.u; parent.querySelector('.food-kcal').value = lib.kcal;
-                calculateModalTotal(); return;
+            
+            // Если нашли в пользовательской библиотеке
+            if(db.library[text]) {
+                const lib = db.library[text];
+                parent.querySelector('.food-b').value = lib.b; 
+                parent.querySelector('.food-j').value = lib.j;
+                parent.querySelector('.food-u').value = lib.u; 
+                parent.querySelector('.food-kcal').value = lib.kcal;
+                calculateModalTotal(); 
+                return;
             }
+
+            // Если нашли во встроенной (поиск по вхождению)
+            const lowText = text.toLowerCase();
             let estKcal = 0; let found = false;
             Object.keys(calorieLibrary).forEach(key => {
-                if (text.includes(key)) {
-                    let weightMatch = text.match(/(\d+)\s*(г|гр)/);
+                if (lowText.includes(key)) {
+                    let weightMatch = lowText.match(/(\d+)\s*(г|гр)/);
                     let mult = weightMatch ? (parseInt(weightMatch[1]) / 100) : 1;
                     estKcal += calorieLibrary[key] * mult; found = true;
                 }
@@ -263,11 +282,20 @@
             const foodData = [];
             rows.forEach(row => {
                 const name = row.querySelector('.food-name').value; if(!name) return;
-                const item = { name, b: row.querySelector('.food-b').value, j: row.querySelector('.food-j').value, u: row.querySelector('.food-u').value, kcal: row.querySelector('.food-kcal').value };
-                foodData.push(item); db.library[name] = item;
+                const item = { 
+                    name, 
+                    b: row.querySelector('.food-b').value, 
+                    j: row.querySelector('.food-j').value, 
+                    u: row.querySelector('.food-u').value, 
+                    kcal: row.querySelector('.food-kcal').value 
+                };
+                foodData.push(item); 
+                // Сохраняем в библиотеку для будущих подсказок
+                db.library[name] = item;
             });
             db.days[activeDate].food = foodData;
-            save(); closeModal();
+            save(); 
+            closeModal();
         }
 
         function closeModal() { document.getElementById('foodModal').classList.remove('active'); }
