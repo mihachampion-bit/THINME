@@ -139,7 +139,9 @@ const FINAL_DB_KEY = 'health_tracker_final_storage';
 const OLD_KEYS = ['diet_db', 'weight_tracker_db'];
 
 let db = { days: {}, library: {} };
-let activeDate = null;const calorieLibrary = {
+let activeDate = null;
+
+const calorieLibrary = {
     "курица":170,"грудка":113,"котлета":250,"рис":130,"говядина":250,
     "масло":717,"брокколи":34,"яйцо":155,"хлеб":250,"гречка":132,
     "рыба":150,"творог":100,"огурец":15,"помидор":18,"сыр":350
@@ -148,6 +150,10 @@ let activeDate = null;const calorieLibrary = {
 /* =======================
    1) БИБЛИОТЕКА БЛЮД: АВТО-СОРТИРОВКА ПО АЛФАВИТУ
    ======================= */
+
+function normalizeFoodName(s) {
+    return String(s || '').trim();
+}
 
 function sortLibraryInDb() {
     const entries = Object.entries(db.library || {});
@@ -212,7 +218,6 @@ function addDay() {
 function updateWeight(d, field, val) {
     if (!db.days[d]) return;
     db.days[d][field] = val;
-    // сохраняем без полного перерендера таблицы, чтобы не сбивать фокус
     sortLibraryInDb();
     localStorage.setItem(FINAL_DB_KEY, JSON.stringify(db));
 }
@@ -232,15 +237,12 @@ function renderTable() {
     const dates = Object.keys(db.days).sort((a,b)=>parseDMY(b)-parseDMY(a));
 
     dates.forEach(d=>{
-        // Заголовок даты занимает две колонки
         headerDates.innerHTML += `<th class="p-4 text-center" colspan="2">${d}</th>`;
-        // Подзаголовки У/В
         headerSub.innerHTML += `
             <th class="p-2 text-center text-[10px] font-bold uppercase text-slate-500 border-r border-slate-100">У</th>
             <th class="p-2 text-center text-[10px] font-bold uppercase text-slate-500">В</th>
         `;
 
-        // Вес: два инпута (У/В) в двух отдельных ячейках
         rowW.innerHTML += `
             <td class="p-2 border-r border-slate-100">
                 <input value="${db.days[d].morning}" class="w-full text-center border border-slate-200 rounded-lg p-1.5"
@@ -252,10 +254,167 @@ function renderTable() {
             </td>
         `;
 
-        // Еда: один показатель на день, растягиваем на 2 колонки
-        const kcal = db.days[d].food.reduce((s,i)=>s+(+i.kcal||0),0);
-        rowF.innerHTML += `<td class="text-center" colspan="2">${Math.round(kcal)}</td>`;
+        const kcal = (db.days[d].food || []).reduce((s,i)=>s+(+i.kcal||0),0);
+
+        rowF.innerHTML += `
+            <td class="text-center cursor-pointer select-none hover:bg-slate-50 transition"
+                colspan="2"
+                onclick="openFoodModal('${d}')"
+                title="Нажмите, чтобы ввести еду">
+                ${Math.round(kcal)}
+            </td>
+        `;
     });
+}
+
+/* =======================
+   ВВОД ЕДЫ: КЛИК ПО ЯЧЕЙКЕ ЕДА (ВАРИАНТ 1)
+   ======================= */
+
+function openFoodModal(d) {
+    if (!db.days[d]) return;
+    activeDate = d;
+
+    document.getElementById('modalTitle').textContent = `Питание — ${d}`;
+    document.getElementById('foodModal').classList.add('active');
+
+    // если на этот день ещё нет массива еды — создаём
+    if (!Array.isArray(db.days[d].food)) db.days[d].food = [];
+
+    renderFoodRows(db.days[d].food);
+
+    // если пусто — сразу одну строку
+    if (db.days[d].food.length === 0) addFoodRow();
+
+    recalcModalTotal();
+}
+
+function closeModal() {
+    const m = document.getElementById('foodModal');
+    if (m) m.classList.remove('active');
+    activeDate = null;
+}
+
+function renderFoodRows(items) {
+    const c = document.getElementById('foodItemsContainer');
+    c.innerHTML = '';
+    items.forEach(item => addFoodRow(item));
+}
+
+function getKnownKcalByName(name) {
+    const n = normalizeFoodName(name).toLowerCase();
+    if (!n) return null;
+
+    if (db.library && Object.prototype.hasOwnProperty.call(db.library, n)) {
+        const v = parseFloat(db.library[n]);
+        return Number.isFinite(v) ? v : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(calorieLibrary, n)) {
+        const v = parseFloat(calorieLibrary[n]);
+        return Number.isFinite(v) ? v : null;
+    }
+    return null;
+}
+
+function addFoodRow(prefill) {
+    const c = document.getElementById('foodItemsContainer');
+    const row = document.createElement('div');
+    row.className = "flex gap-2 items-center";
+
+    const nameVal = prefill && prefill.name ? String(prefill.name) : '';
+    const kcalVal = prefill && (prefill.kcal !== undefined && prefill.kcal !== null) ? String(prefill.kcal) : '';
+
+    row.innerHTML = `
+        <div class="flex-1">
+            <input class="w-full border-2 border-slate-200 p-2.5 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                   placeholder="Блюдо"
+                   list="food-library"
+                   value="${nameVal}">
+        </div>
+        <div class="w-32">
+            <input type="number"
+                   class="w-full border-2 border-slate-200 p-2.5 rounded-xl text-center focus:ring-2 focus:ring-indigo-500"
+                   placeholder="ккал"
+                   value="${kcalVal}">
+        </div>
+        <button class="w-10 h-10 rounded-xl border-2 border-slate-200 hover:bg-slate-50 text-slate-500 font-black"
+                title="Удалить строку">&times;</button>
+    `;
+
+    const nameInput = row.children[0].querySelector('input');
+    const kcalInput = row.children[1].querySelector('input');
+    const delBtn = row.children[2];
+
+    function onAnyChange() {
+        recalcModalTotal();
+    }
+
+    nameInput.addEventListener('input', () => {
+        // авто-подстановка ккал из библиотеки, только если поле ккал пустое
+        const known = getKnownKcalByName(nameInput.value);
+        if ((kcalInput.value === '' || kcalInput.value === null) && known !== null) {
+            kcalInput.value = String(known);
+        }
+        onAnyChange();
+    });
+
+    kcalInput.addEventListener('input', onAnyChange);
+
+    delBtn.addEventListener('click', () => {
+        row.remove();
+        recalcModalTotal();
+    });
+
+    c.appendChild(row);
+    recalcModalTotal();
+}
+
+function recalcModalTotal() {
+    const c = document.getElementById('foodItemsContainer');
+    const rows = Array.from(c.children);
+
+    let total = 0;
+    rows.forEach(r => {
+        const kcalInput = r.querySelectorAll('input')[1];
+        const v = parseFloat(String(kcalInput.value || '').replace(',', '.'));
+        if (Number.isFinite(v)) total += v;
+    });
+
+    document.getElementById('modalTotalKcal').textContent = Math.round(total);
+}
+
+function saveFood() {
+    if (!activeDate || !db.days[activeDate]) return;
+
+    const c = document.getElementById('foodItemsContainer');
+    const rows = Array.from(c.children);
+
+    const food = [];
+    rows.forEach(r => {
+        const inputs = r.querySelectorAll('input');
+        const name = normalizeFoodName(inputs[0].value);
+        const kcalRaw = String(inputs[1].value || '').replace(',', '.');
+        const kcal = parseFloat(kcalRaw);
+
+        if (!name && !Number.isFinite(kcal)) return;
+
+        const item = {
+            name: name,
+            kcal: Number.isFinite(kcal) ? kcal : ''
+        };
+        food.push(item);
+
+        // обновляем "память" блюд: ключ = имя в нижнем регистре (для стабильной сортировки/поиска)
+        const key = normalizeFoodName(name).toLowerCase();
+        if (key && Number.isFinite(kcal)) {
+            db.library[key] = kcal;
+        }
+    });
+
+    db.days[activeDate].food = food;
+
+    save();
+    closeModal();
 }
 
 /* =======================
@@ -322,7 +481,7 @@ function exportToExcel() {
         Дата:d,
         ВесУ:db.days[d].morning,
         ВесВ:db.days[d].evening,
-        Ккал:db.days[d].food.reduce((s,i)=>s+(+i.kcal||0),0)
+        Ккал:(db.days[d].food || []).reduce((s,i)=>s+(+i.kcal||0),0)
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
