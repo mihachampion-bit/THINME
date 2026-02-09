@@ -54,13 +54,12 @@
             Войти через Google
         </button>
 
+        <!-- ✅ Ошибки показываются ТОЛЬКО после клика -->
         <div id="authError" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm font-medium"></div>
 
         <div class="text-xs text-slate-500 leading-relaxed">
-            <div class="font-bold mb-1">Важно:</div>
-            <div>1) Заполните <span class="font-mono">firebaseConfig</span> в коде.</div>
-            <div>2) В Firebase включите провайдера <span class="font-mono">Google</span> (Authentication → Sign-in method).</div>
-            <div>3) Для GitHub Pages добавьте домен в <span class="font-mono">Authorized domains</span>.</div>
+            <div class="font-bold mb-1">Примечание:</div>
+            <div>Если при входе появится сообщение про настройку — значит в код ещё не вставлены ключи Firebase или не включён Google Sign-In.</div>
         </div>
     </div>
 </div>
@@ -158,12 +157,10 @@ function parseDMY(dmy) {
     const [dd, mm, yyyy] = dmy.split('.').map(Number);
     return new Date(yyyy, mm - 1, dd); // ЛОКАЛЬНО
 }
-
 function parseYMD(ymd) {
     const [yyyy, mm, dd] = ymd.split('-').map(Number);
     return new Date(yyyy, mm - 1, dd); // ЛОКАЛЬНО
 }
-
 function formatDMYFromYMD(ymd) {
     const d = parseYMD(ymd);
     return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
@@ -189,7 +186,11 @@ const calorieLibrary = {
    FIREBASE SETUP
    ======================= */
 
-// !!! ВСТАВЬТЕ СЮДА ВАШИ ДАННЫЕ ИЗ Firebase Console (Project settings → Web app)
+/*
+  ✅ Здесь НЕЛЬЗЯ “угадать” значения: они уникальны для вашего Firebase проекта.
+  Но по вашей просьбе программа НЕ ругается при загрузке.
+  Сообщение появится только если нажать “Войти через Google”, а Firebase ещё не подключён.
+*/
 const firebaseConfig = {
     apiKey: "REPLACE_ME",
     authDomain: "REPLACE_ME",
@@ -202,51 +203,45 @@ let fbAuth = null;
 let fbDb = null;
 let firebaseReady = false;
 
-function isFirebaseConfigValid(cfg) {
-    if (!cfg) return false;
-    const req = ['apiKey','authDomain','projectId','appId'];
-    return req.every(k => cfg[k] && typeof cfg[k] === 'string' && !cfg[k].includes('REPLACE_ME'));
-}
-
 function showAuthError(msg) {
     const el = document.getElementById('authError');
     el.textContent = msg;
     el.classList.remove('hidden');
 }
-
 function clearAuthError() {
     const el = document.getElementById('authError');
     el.textContent = '';
     el.classList.add('hidden');
 }
 
-function setGoogleBtnEnabled(enabled) {
-    const btn = document.getElementById('googleBtn');
-    if (!btn) return;
-    btn.disabled = !enabled;
-    btn.classList.toggle('opacity-50', !enabled);
-    btn.classList.toggle('cursor-not-allowed', !enabled);
+function isFirebaseConfigFilled(cfg) {
+    if (!cfg) return false;
+    const req = ['apiKey','authDomain','projectId','appId'];
+    return req.every(k => cfg[k] && typeof cfg[k] === 'string' && cfg[k].trim().length > 0 && !cfg[k].includes('REPLACE_ME'));
 }
 
-function initFirebase() {
-    firebaseReady = false;
+function ensureFirebaseReadySilently() {
+    // ✅ НИКАКИХ сообщений при загрузке, только “молча” пытаемся инициализировать
+    if (firebaseReady) return true;
 
-    if (!isFirebaseConfigValid(firebaseConfig)) {
-        setGoogleBtnEnabled(false);
-        showAuthError("Firebase не настроен: заполните firebaseConfig (apiKey/authDomain/projectId/appId).");
-        return;
+    if (!isFirebaseConfigFilled(firebaseConfig)) {
+        firebaseReady = false;
+        return false;
     }
 
     try {
-        fbApp = firebase.initializeApp(firebaseConfig);
+        if (!firebase.apps || firebase.apps.length === 0) {
+            fbApp = firebase.initializeApp(firebaseConfig);
+        } else {
+            fbApp = firebase.app();
+        }
         fbAuth = firebase.auth();
         fbDb = firebase.firestore();
         firebaseReady = true;
-        setGoogleBtnEnabled(true);
-        clearAuthError();
-    } catch (e) {
-        setGoogleBtnEnabled(false);
-        showAuthError("Ошибка инициализации Firebase: " + (e.message || e));
+        return true;
+    } catch {
+        firebaseReady = false;
+        return false;
     }
 }
 
@@ -257,10 +252,10 @@ function initFirebase() {
 function explainAuthError(e) {
     const code = e?.code || "";
     if (code === "auth/operation-not-allowed") {
-        return "В Firebase не включён провайдер Google. Включите: Authentication → Sign-in method → Google → Enable.";
+        return "В Firebase не включён вход через Google: Authentication → Sign-in method → Google → Enable.";
     }
     if (code === "auth/unauthorized-domain") {
-        return "Домен не разрешён. Добавьте ваш домен GitHub Pages в Firebase: Authentication → Settings → Authorized domains.";
+        return "Домен не разрешён. Добавьте домен GitHub Pages в Firebase: Authentication → Settings → Authorized domains.";
     }
     if (code === "auth/popup-blocked") {
         return "Браузер заблокировал окно входа. Разрешите всплывающие окна и повторите.";
@@ -273,11 +268,17 @@ function explainAuthError(e) {
 
 async function loginWithGoogle() {
     clearAuthError();
-    if (!firebaseReady || !fbAuth) return showAuthError("Firebase не готов. Заполните firebaseConfig.");
+
+    // ✅ Если Firebase не подключён — показываем понятную инструкцию ТОЛЬКО после клика
+    if (!ensureFirebaseReadySilently()) {
+        showAuthError(
+            "Google-вход ещё не подключён. Нужно: (1) создать проект в Firebase, (2) добавить Web App и взять firebaseConfig, (3) включить Google провайдера в Authentication и добавить домен GitHub Pages в Authorized domains."
+        );
+        return;
+    }
 
     try {
         const provider = new firebase.auth.GoogleAuthProvider();
-        // popup удобен для GitHub Pages
         await fbAuth.signInWithPopup(provider);
     } catch (e) {
         showAuthError(explainAuthError(e));
@@ -306,11 +307,8 @@ async function loadFromCloud() {
     const snap = await ref.get();
     if (snap.exists) {
         const data = snap.data() || {};
-        if (data.db && typeof data.db === 'object') {
-            db = data.db;
-        } else {
-            db = { days: {}, library: {} };
-        }
+        if (data.db && typeof data.db === 'object') db = data.db;
+        else db = { days: {}, library: {} };
     } else {
         db = { days: {}, library: {} };
         db.library = { ...(calorieLibrary||{}), ...(db.library||{}) };
@@ -339,10 +337,7 @@ async function migrateData() {
     if (current) {
         try {
             const parsed = JSON.parse(current);
-            if (parsed && typeof parsed === 'object') {
-                db = parsed;
-                migrated = true;
-            }
+            if (parsed && typeof parsed === 'object') { db = parsed; migrated = true; }
         } catch {}
     }
 
@@ -479,24 +474,20 @@ function openFood(d) {
     renderFoodModal();
     document.getElementById('foodModal').classList.add('active');
 }
-
 function closeModal() {
     document.getElementById('foodModal').classList.remove('active');
     activeDate = null;
 }
-
 function addFoodRow(item = { name:'', grams:'', kcal:'' }) {
     if (!activeDate) return;
     db.days[activeDate].food.push({ name: item.name||'', grams: item.grams||'', kcal: item.kcal||'' });
     renderFoodModal();
 }
-
 function removeFoodRow(idx) {
     if (!activeDate) return;
     db.days[activeDate].food.splice(idx,1);
     renderFoodModal();
 }
-
 function setFoodField(idx, field, value) {
     if (!activeDate) return;
     const row = db.days[activeDate].food[idx];
@@ -508,20 +499,16 @@ function setFoodField(idx, field, value) {
         const nm = String(row.name||'').trim().toLowerCase();
         const per100 = db.library?.[nm];
         const gr = parseFloat(String(row.grams||'').replace(',','.'));
-        if (per100 != null && !Number.isNaN(gr)) {
-            row.kcal = String(Math.round((per100 * gr) / 100));
-        }
+        if (per100 != null && !Number.isNaN(gr)) row.kcal = String(Math.round((per100 * gr) / 100));
     }
 
     updateModalTotal();
 }
-
 function updateModalTotal() {
     if (!activeDate) return;
     const total = (db.days[activeDate].food||[]).reduce((s,i)=>s+(+i.kcal||0),0);
     document.getElementById('modalTotalKcal').textContent = Math.round(total);
 }
-
 function renderFoodModal() {
     const c = document.getElementById('foodItemsContainer');
     if (!activeDate) return;
@@ -547,11 +534,9 @@ function renderFoodModal() {
                     onclick="removeFoodRow(${idx})">&times;</button>
         </div>
     `).join('');
-
     if (items.length === 0) addFoodRow();
     updateModalTotal();
 }
-
 async function saveFood() {
     if (!activeDate) return;
     await save();
@@ -568,25 +553,23 @@ function openAnalytics() {
     document.getElementById('analyticsModal').classList.add('active');
     renderAnalytics();
 }
-
 function closeAnalytics() {
     document.getElementById('analyticsModal').classList.remove('active');
 }
-
 function renderAnalytics() {
     const dates = Object.keys(db.days || {}).sort((a,b)=>parseDMY(a)-parseDMY(b));
     const labels = dates;
 
     const morning = dates.map(d=>{
         const v = (db.days[d]?.morning ?? '').toString().trim().replace(',','.');
-        if (!v) return null;          // ✅ пропуск
+        if (!v) return null; // ✅ пропуск
         const n = parseFloat(v);
         return Number.isFinite(n) ? n : null;
     });
 
     const evening = dates.map(d=>{
         const v = (db.days[d]?.evening ?? '').toString().trim().replace(',','.');
-        if (!v) return null;          // ✅ пропуск
+        if (!v) return null; // ✅ пропуск
         const n = parseFloat(v);
         return Number.isFinite(n) ? n : null;
     });
@@ -642,12 +625,14 @@ function exportToExcel() {
    ======================= */
 
 async function init() {
-    initFirebase();
+    // ✅ не показываем никаких ошибок при старте
+    ensureFirebaseReadySilently();
 
     document.getElementById('newDateInput').value =
         new Date().toISOString().slice(0,10);
 
-    if (fbAuth) {
+    // Если Firebase уже готов — включим авто-загрузку по сессии
+    if (firebaseReady && fbAuth) {
         fbAuth.onAuthStateChanged(async (user)=>{
             const authScreen = document.getElementById('authScreen');
             const logoutBtn = document.getElementById('logoutBtn');
@@ -664,6 +649,7 @@ async function init() {
             } else {
                 logoutBtn.classList.add('hidden');
                 authScreen.classList.remove('hidden');
+                clearAuthError();
 
                 db = { days: {}, library: {} };
                 activeDate = null;
@@ -672,6 +658,8 @@ async function init() {
             }
         });
     } else {
+        // Firebase не подключён — показываем просто пустую таблицу
+        db = { days: {}, library: { ...(calorieLibrary||{}) } };
         renderFoodLibrary();
         renderTable();
     }
