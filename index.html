@@ -212,6 +212,17 @@ function addDay() {
 }
 
 /* =======================
+   УДАЛЕНИЕ ДАТЫ
+   ======================= */
+
+function deleteDay(d) {
+    if (!db.days[d]) return;
+    if (!confirm(`Удалить дату ${d}?`)) return;
+    delete db.days[d];
+    save();
+}
+
+/* =======================
    2) ТАБЛИЦА: 2 КОЛОНКИ НА ДЕНЬ (У/В)
    ======================= */
 
@@ -237,7 +248,20 @@ function renderTable() {
     const dates = Object.keys(db.days).sort((a,b)=>parseDMY(b)-parseDMY(a));
 
     dates.forEach(d=>{
-        headerDates.innerHTML += `<th class="p-4 text-center" colspan="2">${d}</th>`;
+        headerDates.innerHTML += `
+            <th class="p-4 text-center" colspan="2">
+                <div class="flex items-center justify-center gap-2">
+                    <span>${d}</span>
+                    <button
+                        class="w-6 h-6 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100"
+                        title="Удалить дату"
+                        onclick="deleteDay('${d}')">
+                        &times;
+                    </button>
+                </div>
+            </th>
+        `;
+
         headerSub.innerHTML += `
             <th class="p-2 text-center text-[10px] font-bold uppercase text-slate-500 border-r border-slate-100">У</th>
             <th class="p-2 text-center text-[10px] font-bold uppercase text-slate-500">В</th>
@@ -278,12 +302,10 @@ function openFoodModal(d) {
     document.getElementById('modalTitle').textContent = `Питание — ${d}`;
     document.getElementById('foodModal').classList.add('active');
 
-    // если на этот день ещё нет массива еды — создаём
     if (!Array.isArray(db.days[d].food)) db.days[d].food = [];
 
     renderFoodRows(db.days[d].food);
 
-    // если пусто — сразу одну строку
     if (db.days[d].food.length === 0) addFoodRow();
 
     recalcModalTotal();
@@ -350,7 +372,6 @@ function addFoodRow(prefill) {
     }
 
     nameInput.addEventListener('input', () => {
-        // авто-подстановка ккал из библиотеки, только если поле ккал пустое
         const known = getKnownKcalByName(nameInput.value);
         if ((kcalInput.value === '' || kcalInput.value === null) && known !== null) {
             kcalInput.value = String(known);
@@ -404,7 +425,6 @@ function saveFood() {
         };
         food.push(item);
 
-        // обновляем "память" блюд: ключ = имя в нижнем регистре (для стабильной сортировки/поиска)
         const key = normalizeFoodName(name).toLowerCase();
         if (key && Number.isFinite(kcal)) {
             db.library[key] = kcal;
