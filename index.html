@@ -50,9 +50,15 @@
     <div class="overflow-x-auto bg-white rounded-2xl shadow-xl border border-slate-200">
         <table class="w-full border-collapse">
             <thead>
-            <tr id="tableHeader" class="bg-slate-50 border-b border-slate-200">
+            <!-- 1-я строка: даты (colspan=2 на каждый день) -->
+            <tr id="tableHeaderDates" class="bg-slate-50 border-b border-slate-200">
                 <th class="p-4 border-r border-slate-200 text-slate-400 font-bold uppercase text-[10px]">
                     Параметры
+                </th>
+            </tr>
+            <!-- 2-я строка: подзаголовки У/В -->
+            <tr id="tableHeaderSub" class="bg-slate-50 border-b border-slate-200">
+                <th class="p-2 border-r border-slate-200 text-slate-400 font-bold uppercase text-[10px]">
                 </th>
             </tr>
             </thead>
@@ -140,12 +146,8 @@ let activeDate = null;const calorieLibrary = {
 };
 
 /* =======================
-   (1) АЛФАВИТНАЯ СОРТИРОВКА БЛЮД В ПАМЯТИ + В DATALIST
+   1) БИБЛИОТЕКА БЛЮД: АВТО-СОРТИРОВКА ПО АЛФАВИТУ
    ======================= */
-
-function normalizeFoodName(s) {
-    return String(s || '').trim();
-}
 
 function sortLibraryInDb() {
     const entries = Object.entries(db.library || {});
@@ -156,17 +158,10 @@ function sortLibraryInDb() {
 function rebuildFoodDatalist() {
     const dl = document.getElementById('food-library');
     if (!dl) return;
-
-    // Берём только сохранённые пользователем блюда (db.library) — как “остающиеся в памяти”
     const names = Object.keys(db.library || {})
         .sort((a, b) => a.localeCompare(b, 'ru', { sensitivity: 'base' }));
-
     dl.innerHTML = names.map(n => `<option value="${n}"></option>`).join('');
 }
-
-/* =======================
-   МИГРАЦИЯ / СОХРАНЕНИЕ
-   ======================= */
 
 function migrateData() {
     let migrated = false;
@@ -184,7 +179,6 @@ function migrateData() {
         }
     });
 
-    // сортируем блюда в памяти сразу после миграции/загрузки
     sortLibraryInDb();
     rebuildFoodDatalist();
 
@@ -195,7 +189,6 @@ function migrateData() {
 }
 
 function save() {
-    // сортируем блюда в памяти перед сохранением
     sortLibraryInDb();
     localStorage.setItem(FINAL_DB_KEY, JSON.stringify(db));
     rebuildFoodDatalist();
@@ -212,23 +205,116 @@ function addDay() {
     }
 }
 
+/* =======================
+   2) ТАБЛИЦА: 2 КОЛОНКИ НА ДЕНЬ (У/В)
+   ======================= */
+
+function updateWeight(d, field, val) {
+    if (!db.days[d]) return;
+    db.days[d][field] = val;
+    // сохраняем без полного перерендера таблицы, чтобы не сбивать фокус
+    sortLibraryInDb();
+    localStorage.setItem(FINAL_DB_KEY, JSON.stringify(db));
+}
+
 function renderTable() {
-    const header = document.getElementById('tableHeader');
+    const headerDates = document.getElementById('tableHeaderDates');
+    const headerSub = document.getElementById('tableHeaderSub');
     const rowW = document.getElementById('rowWeight');
     const rowF = document.getElementById('rowFood');
 
-    header.innerHTML = `<th class="p-4 border-r text-xs uppercase">Параметры</th>`;
+    headerDates.innerHTML = `<th class="p-4 border-r text-xs uppercase">Параметры</th>`;
+    headerSub.innerHTML = `<th class="p-2 border-r text-xs uppercase"></th>`;
+
     rowW.innerHTML = `<td class="p-4 font-bold bg-slate-50">Вес</td>`;
     rowF.innerHTML = `<td class="p-4 font-bold bg-slate-50">Еда</td>`;
 
     const dates = Object.keys(db.days).sort((a,b)=>parseDMY(b)-parseDMY(a));
 
     dates.forEach(d=>{
-        header.innerHTML += `<th class="p-4 text-center">${d}</th>`;
-        rowW.innerHTML += `<td><input value="${db.days[d].morning}" class="w-full text-center"></td>`;
+        // Заголовок даты занимает две колонки
+        headerDates.innerHTML += `<th class="p-4 text-center" colspan="2">${d}</th>`;
+        // Подзаголовки У/В
+        headerSub.innerHTML += `
+            <th class="p-2 text-center text-[10px] font-bold uppercase text-slate-500 border-r border-slate-100">У</th>
+            <th class="p-2 text-center text-[10px] font-bold uppercase text-slate-500">В</th>
+        `;
+
+        // Вес: два инпута (У/В) в двух отдельных ячейках
+        rowW.innerHTML += `
+            <td class="p-2 border-r border-slate-100">
+                <input value="${db.days[d].morning}" class="w-full text-center border border-slate-200 rounded-lg p-1.5"
+                       oninput="updateWeight('${d}','morning',this.value)">
+            </td>
+            <td class="p-2">
+                <input value="${db.days[d].evening}" class="w-full text-center border border-slate-200 rounded-lg p-1.5"
+                       oninput="updateWeight('${d}','evening',this.value)">
+            </td>
+        `;
+
+        // Еда: один показатель на день, растягиваем на 2 колонки
         const kcal = db.days[d].food.reduce((s,i)=>s+(+i.kcal||0),0);
-        rowF.innerHTML += `<td class="text-center">${Math.round(kcal)}</td>`;
+        rowF.innerHTML += `<td class="text-center" colspan="2">${Math.round(kcal)}</td>`;
     });
+}
+
+/* =======================
+   3) АНАЛИТИКА: НЕ УСРЕДНЯТЬ, КАЖДЫЙ ЗАМЕР ОТДЕЛЬНО,
+      ЕСЛИ НЕТ ЗАМЕРА — ПРОПУСК (null), А НЕ 0
+   ======================= */
+
+let analyticsChart = null;
+
+function toNumberOrNull(v) {
+    const n = parseFloat(String(v || '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+}
+
+function openAnalytics() {
+    const modal = document.getElementById('analyticsModal');
+    modal.classList.add('active');
+
+    const datesAsc = Object.keys(db.days).sort((a,b)=>parseDMY(a)-parseDMY(b));
+
+    const labels = [];
+    const data = [];
+
+    datesAsc.forEach(d => {
+        labels.push(`${d} (У)`);
+        data.push(toNumberOrNull(db.days[d].morning));
+
+        labels.push(`${d} (В)`);
+        data.push(toNumberOrNull(db.days[d].evening));
+    });
+
+    const ctx = document.getElementById('analyticsChart').getContext('2d');
+    if (analyticsChart) analyticsChart.destroy();
+
+    analyticsChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Вес',
+                data,
+                spanGaps: false,
+                tension: 0.25
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: true } },
+            scales: {
+                y: { beginAtZero: false }
+            }
+        }
+    });
+}
+
+function closeAnalytics() {
+    document.getElementById('analyticsModal').classList.remove('active');
 }
 
 function exportToExcel() {
@@ -243,92 +329,6 @@ function exportToExcel() {
     XLSX.utils.book_append_sheet(wb, ws, "Дневник");
     XLSX.writeFile(wb, "Diet_Data.xlsx");
 }
-
-/* =======================
-   (2) АНАЛИТИКА: НЕ УСРЕДНЯТЬ ЗА ДЕНЬ, ПРОПУСКИ ВЕСА = ПРОПУСКИ НА ГРАФИКЕ
-   ======================= */
-
-let analyticsChartInstance = null;
-
-function toNumberOrNull(v) {
-    const n = parseFloat(String(v || '').replace(',', '.'));
-    return Number.isFinite(n) ? n : null;
-}
-
-function openAnalytics() {
-    const modal = document.getElementById('analyticsModal');
-    modal.classList.add('active');
-
-    const datesAsc = Object.keys(db.days).sort((a,b)=>parseDMY(a)-parseDMY(b));
-
-    // каждое измерение отдельно (утро/вечер), без усреднения
-    const labels = [];
-    const morningData = [];
-    const eveningData = [];
-
-    datesAsc.forEach(d => {
-        labels.push(`${d} (У)`);
-        morningData.push(toNumberOrNull(db.days[d].morning));
-        eveningData.push(null); // чтобы точки были отдельными по оси X
-
-        labels.push(`${d} (В)`);
-        morningData.push(null);
-        eveningData.push(toNumberOrNull(db.days[d].evening));
-    });
-
-    const ctx = document.getElementById('analyticsChart').getContext('2d');
-    if (analyticsChartInstance) analyticsChartInstance.destroy();
-
-    analyticsChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Вес (утро)',
-                    data: morningData,
-                    spanGaps: false,
-                    tension: 0.25
-                },
-                {
-                    label: 'Вес (вечер)',
-                    data: eveningData,
-                    spanGaps: false,
-                    tension: 0.25
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: true }
-            },
-            scales: {
-                y: { beginAtZero: false }
-            }
-        }
-    });
-}
-
-function closeAnalytics() {
-    document.getElementById('analyticsModal').classList.remove('active');
-}
-
-/* =======================
-   ПУСТЫЕ ЗАГЛУШКИ ДЛЯ МОДАЛКИ ЕДЫ (чтобы код не ломался)
-   ======================= */
-function closeModal() {
-    const m = document.getElementById('foodModal');
-    if (m) m.classList.remove('active');
-}
-function addFoodRow() {}
-function saveFood() {}
-
-/* =======================
-   ИНИЦИАЛИЗАЦИЯ
-   ======================= */
 
 function init() {
     migrateData();
