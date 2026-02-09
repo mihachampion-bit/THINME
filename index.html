@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-    <!-- ✅ Firebase (Auth + Firestore) для хранения данных "не в кэше браузера", а в облаке с логином/паролем -->
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
@@ -35,7 +35,7 @@
     </div>
 </nav>
 
-<!-- ✅ Экран логина -->
+<!-- Экран логина -->
 <div id="authScreen" class="fixed inset-0 z-50 bg-slate-50 flex items-center justify-center p-4">
     <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 space-y-4">
         <div class="space-y-1">
@@ -58,15 +58,15 @@
         </div>
 
         <div class="flex gap-2">
-            <button onclick="login()" class="flex-1 bg-indigo-600 text-white py-3 rounded-2xl font-bold">Войти</button>
-            <button onclick="register()" class="flex-1 border-2 border-indigo-600 text-indigo-700 py-3 rounded-2xl font-bold">Регистрация</button>
+            <button id="loginBtn" type="button" onclick="login()" class="flex-1 bg-indigo-600 text-white py-3 rounded-2xl font-bold">Войти</button>
+            <button id="registerBtn" type="button" onclick="register()" class="flex-1 border-2 border-indigo-600 text-indigo-700 py-3 rounded-2xl font-bold">Регистрация</button>
         </div>
 
         <div id="authError" class="hidden p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm font-medium"></div>
 
         <div class="text-xs text-slate-500 leading-relaxed">
             <div class="font-bold mb-1">Важно:</div>
-            <div>Нужно один раз вставить настройки Firebase в код (объект <span class="font-mono">firebaseConfig</span>).</div>
+            <div>Нужно один раз вставить настройки Firebase в код (объект <span class="font-mono">firebaseConfig</span>) и включить Email/Password в Firebase Authentication.</div>
         </div>
     </div>
 </div>
@@ -74,7 +74,7 @@
 <div class="container mx-auto p-4">
 
     <div id="recoveryAlert" class="hidden mb-4 p-3 bg-green-100 border border-green-200 text-green-700 rounded-xl text-sm font-medium">
-        ✅ Данные из предыдущей версии успешно восстановлены!
+        ✅ Данные из предыдущной версии успешно восстановлены!
     </div>
 
     <div class="bg-white p-6 rounded-2xl shadow-md mb-6 border border-slate-200">
@@ -134,7 +134,6 @@
     </div>
 </div>
 
-<!-- ✅ Аналитика -->
 <div id="analyticsModal" class="modal items-center justify-center p-4 backdrop-blur-sm">
     <div class="bg-white rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl">
         <div class="p-6 border-b flex justify-between bg-slate-50">
@@ -156,28 +155,18 @@
 <datalist id="food-library"></datalist>
 
 <script>
-/* =======================
-   ФИКС РАБОТЫ С ДАТАМИ
-   ======================= */
-
 function parseDMY(dmy) {
     const [dd, mm, yyyy] = dmy.split('.').map(Number);
-    return new Date(yyyy, mm - 1, dd); // ЛОКАЛЬНО
+    return new Date(yyyy, mm - 1, dd);
 }
-
 function parseYMD(ymd) {
     const [yyyy, mm, dd] = ymd.split('-').map(Number);
-    return new Date(yyyy, mm - 1, dd); // ЛОКАЛЬНО
+    return new Date(yyyy, mm - 1, dd);
 }
-
 function formatDMYFromYMD(ymd) {
     const d = parseYMD(ymd);
     return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
 }
-
-/* =======================
-   ХРАНИЛИЩЕ (теперь Firestore)
-   ======================= */
 
 const FINAL_DB_KEY = 'health_tracker_final_storage';
 const OLD_KEYS = ['diet_db', 'weight_tracker_db'];
@@ -191,11 +180,7 @@ const calorieLibrary = {
     "рыба":150,"творог":100,"огурец":15,"помидор":18,"сыр":350
 };
 
-/* =======================
-   FIREBASE SETUP
-   ======================= */
-
-// !!! ВСТАВЬТЕ СЮДА ВАШИ ДАННЫЕ ИЗ Firebase Console (Project settings → Web app)
+// ===== Firebase setup =====
 const firebaseConfig = {
     apiKey: "REPLACE_ME",
     authDomain: "REPLACE_ME",
@@ -206,57 +191,99 @@ const firebaseConfig = {
 let fbApp = null;
 let fbAuth = null;
 let fbDb = null;
+let firebaseReady = false;
 
-function initFirebase() {
-    try {
-        fbApp = firebase.initializeApp(firebaseConfig);
-        fbAuth = firebase.auth();
-        fbDb = firebase.firestore();
-    } catch (e) {
-        // если конфиг не заполнен — покажем ошибку на экране логина
-        showAuthError("Не настроен Firebase. Заполните firebaseConfig в коде (apiKey/authDomain/projectId/appId).");
-    }
+function isFirebaseConfigValid(cfg) {
+    if (!cfg) return false;
+    const req = ['apiKey','authDomain','projectId','appId'];
+    return req.every(k => cfg[k] && typeof cfg[k] === 'string' && !cfg[k].includes('REPLACE_ME'));
 }
 
-/* =======================
-   AUTH UI
-   ======================= */
+function setAuthButtonsEnabled(enabled) {
+    const loginBtn = document.getElementById('loginBtn');
+    const registerBtn = document.getElementById('registerBtn');
+    if (loginBtn) loginBtn.disabled = !enabled;
+    if (registerBtn) registerBtn.disabled = !enabled;
+
+    // визуально
+    if (loginBtn) loginBtn.classList.toggle('opacity-50', !enabled);
+    if (registerBtn) registerBtn.classList.toggle('opacity-50', !enabled);
+    if (loginBtn) loginBtn.classList.toggle('cursor-not-allowed', !enabled);
+    if (registerBtn) registerBtn.classList.toggle('cursor-not-allowed', !enabled);
+}
 
 function showAuthError(msg) {
     const el = document.getElementById('authError');
     el.textContent = msg;
     el.classList.remove('hidden');
 }
-
 function clearAuthError() {
     const el = document.getElementById('authError');
     el.textContent = '';
     el.classList.add('hidden');
 }
 
+function initFirebase() {
+    firebaseReady = false;
+
+    if (!isFirebaseConfigValid(firebaseConfig)) {
+        setAuthButtonsEnabled(false);
+        showAuthError("Firebase не настроен: заполните firebaseConfig (apiKey/authDomain/projectId/appId).");
+        return;
+    }
+
+    try {
+        fbApp = firebase.initializeApp(firebaseConfig);
+        fbAuth = firebase.auth();
+        fbDb = firebase.firestore();
+        firebaseReady = true;
+        setAuthButtonsEnabled(true);
+        clearAuthError();
+    } catch (e) {
+        setAuthButtonsEnabled(false);
+        showAuthError("Ошибка инициализации Firebase: " + (e.message || e));
+    }
+}
+
+function explainAuthError(e) {
+    const code = e?.code || "";
+    if (code === "auth/operation-not-allowed") {
+        return "Регистрация отключена в Firebase. Включите Email/Password: Firebase Console → Authentication → Sign-in method → Email/Password → Enable.";
+    }
+    if (code === "auth/invalid-api-key" || code === "auth/configuration-not-found") {
+        return "Неверный firebaseConfig. Проверьте apiKey/authDomain/projectId/appId.";
+    }
+    if (code === "auth/invalid-email") return "Некорректный email.";
+    if (code === "auth/weak-password") return "Слишком простой пароль (обычно минимум 6 символов).";
+    if (code === "auth/email-already-in-use") return "Этот email уже зарегистрирован. Нажмите «Войти» или используйте другой email.";
+    if (code === "auth/wrong-password") return "Неверный пароль.";
+    if (code === "auth/user-not-found") return "Пользователь не найден. Нажмите «Регистрация».";
+    return e?.message || "Ошибка авторизации.";
+}
+
 async function login() {
     clearAuthError();
-    if (!fbAuth) return showAuthError("Firebase не инициализирован.");
+    if (!firebaseReady || !fbAuth) return showAuthError("Firebase не готов. Заполните firebaseConfig.");
     const email = document.getElementById('authEmail').value.trim();
     const password = document.getElementById('authPassword').value;
     if (!email || !password) return showAuthError("Введите почту и пароль.");
     try {
         await fbAuth.signInWithEmailAndPassword(email, password);
     } catch (e) {
-        showAuthError(e.message || "Ошибка входа.");
+        showAuthError(explainAuthError(e));
     }
 }
 
 async function register() {
     clearAuthError();
-    if (!fbAuth) return showAuthError("Firebase не инициализирован.");
+    if (!firebaseReady || !fbAuth) return showAuthError("Firebase не готов. Заполните firebaseConfig.");
     const email = document.getElementById('authEmail').value.trim();
     const password = document.getElementById('authPassword').value;
     if (!email || !password) return showAuthError("Введите почту и пароль.");
     try {
         await fbAuth.createUserWithEmailAndPassword(email, password);
     } catch (e) {
-        showAuthError(e.message || "Ошибка регистрации.");
+        showAuthError(explainAuthError(e));
     }
 }
 
@@ -264,10 +291,6 @@ async function logout() {
     if (!fbAuth) return;
     await fbAuth.signOut();
 }
-
-/* =======================
-   FIRESTORE LOAD/SAVE
-   ======================= */
 
 function userDocRef() {
     const u = fbAuth?.currentUser;
@@ -281,22 +304,14 @@ async function loadFromCloud() {
     const snap = await ref.get();
     if (snap.exists) {
         const data = snap.data() || {};
-        if (data.db && typeof data.db === 'object') {
-            db = data.db;
-        } else {
-            db = { days: {}, library: {} };
-        }
+        if (data.db && typeof data.db === 'object') db = data.db;
+        else db = { days: {}, library: {} };
     } else {
-        // новый пользователь
         db = { days: {}, library: {} };
-        // подмешаем базовую библиотеку
         db.library = { ...(calorieLibrary||{}), ...(db.library||{}) };
         await ref.set({ db, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
     }
-
-    // Подмешиваем базовую библиотеку, если ее нет
     db.library = { ...(calorieLibrary||{}), ...(db.library||{}) };
-
     renderFoodLibrary();
     renderTable();
 }
@@ -307,25 +322,15 @@ async function saveToCloud() {
     await ref.set({ db, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
 }
 
-/* =======================
-   MIGRATION (из localStorage в облако, один раз)
-   ======================= */
-
 async function migrateData() {
     let migrated = false;
-
-    // Пробуем забрать данные из старого localStorage ТОЛЬКО для переноса в облако
     const current = localStorage.getItem(FINAL_DB_KEY);
     if (current) {
         try {
             const parsed = JSON.parse(current);
-            if (parsed && typeof parsed === 'object') {
-                db = parsed;
-                migrated = true;
-            }
+            if (parsed && typeof parsed === 'object') { db = parsed; migrated = true; }
         } catch {}
     }
-
     OLD_KEYS.forEach(k => {
         const old = localStorage.getItem(k);
         if (old) {
@@ -338,29 +343,19 @@ async function migrateData() {
             } catch {}
         }
     });
-
     if (migrated) {
-        // Подмешаем базовую библиотеку
         db.library = { ...(calorieLibrary||{}), ...(db.library||{}) };
-        // Сохраним в облако
         await saveToCloud();
-        // Удалим финальный ключ, чтобы больше не использовать localStorage
         localStorage.removeItem(FINAL_DB_KEY);
-
         document.getElementById('recoveryAlert').classList.remove('hidden');
     }
 }
 
 async function save() {
-    // ✅ больше НЕ пишем в localStorage — только в облако
     await saveToCloud();
     renderFoodLibrary();
     renderTable();
 }
-
-/* =======================
-   БИБЛИОТЕКА БЛЮД (сортировка по алфавиту)
-   ======================= */
 
 function renderFoodLibrary() {
     const dl = document.getElementById('food-library');
@@ -368,7 +363,6 @@ function renderFoodLibrary() {
     const keys = Object.keys(db.library || {}).sort((a,b)=>a.localeCompare(b,'ru'));
     dl.innerHTML = keys.map(k => `<option value="${escapeHtml(k)}"></option>`).join('');
 }
-
 function escapeHtml(s) {
     return String(s)
         .replaceAll('&','&amp;')
@@ -377,10 +371,6 @@ function escapeHtml(s) {
         .replaceAll('"','&quot;')
         .replaceAll("'","&#039;");
 }
-
-/* =======================
-   ДНЕВНИК
-   ======================= */
 
 function addDay() {
     const val = document.getElementById('newDateInput').value;
@@ -439,26 +429,17 @@ function renderTable() {
 }
 
 function normalizeNumberInput(v) {
-    // разрешим запятую и точки, выкинем лишнее
     const s = String(v ?? '').trim().replace(',', '.');
-    // оставим только цифры/точку/минус
-    const cleaned = s.replace(/[^0-9.\-]/g,'');
-    return cleaned;
+    return s.replace(/[^0-9.\-]/g,'');
 }
 
 let saveDebounce = null;
 function setWeight(dateKey, field, value) {
     if (!db.days[dateKey]) db.days[dateKey] = { morning:'', evening:'', food:[] };
     db.days[dateKey][field] = normalizeNumberInput(value);
-
-    // дебаунс, чтобы не спамить облако
     clearTimeout(saveDebounce);
     saveDebounce = setTimeout(()=>save(), 400);
 }
-
-/* =======================
-   FOOD MODAL (минимальная реализация)
-   ======================= */
 
 function openFood(d) {
     activeDate = d;
@@ -468,24 +449,20 @@ function openFood(d) {
     renderFoodModal();
     document.getElementById('foodModal').classList.add('active');
 }
-
 function closeModal() {
     document.getElementById('foodModal').classList.remove('active');
     activeDate = null;
 }
-
 function addFoodRow(item = { name:'', grams:'', kcal:'' }) {
     if (!activeDate) return;
     db.days[activeDate].food.push({ name: item.name||'', grams: item.grams||'', kcal: item.kcal||'' });
     renderFoodModal();
 }
-
 function removeFoodRow(idx) {
     if (!activeDate) return;
     db.days[activeDate].food.splice(idx,1);
     renderFoodModal();
 }
-
 function setFoodField(idx, field, value) {
     if (!activeDate) return;
     const row = db.days[activeDate].food[idx];
@@ -493,25 +470,19 @@ function setFoodField(idx, field, value) {
     if (field === 'kcal' || field === 'grams') value = normalizeNumberInput(value);
     row[field] = value;
 
-    // автоподстановка ккал по библиотеке (если ввели блюдо и граммы)
     if (field === 'name' || field === 'grams') {
         const nm = String(row.name||'').trim().toLowerCase();
         const per100 = db.library?.[nm];
         const gr = parseFloat(String(row.grams||'').replace(',','.'));
-        if (per100 != null && !Number.isNaN(gr)) {
-            row.kcal = String(Math.round((per100 * gr) / 100));
-        }
+        if (per100 != null && !Number.isNaN(gr)) row.kcal = String(Math.round((per100 * gr) / 100));
     }
-
     updateModalTotal();
 }
-
 function updateModalTotal() {
     if (!activeDate) return;
     const total = (db.days[activeDate].food||[]).reduce((s,i)=>s+(+i.kcal||0),0);
     document.getElementById('modalTotalKcal').textContent = Math.round(total);
 }
-
 function renderFoodModal() {
     const c = document.getElementById('foodItemsContainer');
     if (!activeDate) return;
@@ -537,108 +508,61 @@ function renderFoodModal() {
                     onclick="removeFoodRow(${idx})">&times;</button>
         </div>
     `).join('');
-
-    // если пусто — добавим строку
     if (items.length === 0) addFoodRow();
     updateModalTotal();
 }
-
 async function saveFood() {
     if (!activeDate) return;
-
-    // обновляем библиотеку из введённых блюд (если задана ккал на 100 г)
-    // здесь мы сохраняем только сам факт блюда в памяти, а не вычисляем "на 100"
-    // чтобы не менять логику — просто добавим блюдо в library, если есть "ккал на 100" в справочнике
-    // (если пользователь вручную ввел, мы не можем надежно вывести на 100, поэтому не навязываем)
-
-    // но если в библиотеке нет названия — добавим с "ккал/100г" из базовой библиотеки или пропустим
-    // (на практике пользователь может сам редактировать библиотеку через код)
-
-    // Важно: сортировка библиотеки делается в renderFoodLibrary()
-
     await save();
     closeModal();
 }
 
-/* =======================
-   АНАЛИТИКА (без усреднения + пропуски вместо нуля)
-   ======================= */
-
 let weightChartInstance = null;
-
 function openAnalytics() {
     document.getElementById('analyticsModal').classList.add('active');
     renderAnalytics();
 }
-
 function closeAnalytics() {
     document.getElementById('analyticsModal').classList.remove('active');
 }
-
 function renderAnalytics() {
-    // сортируем по возрастанию даты для графика
     const dates = Object.keys(db.days || {}).sort((a,b)=>parseDMY(a)-parseDMY(b));
-
     const labels = dates;
+
     const morning = dates.map(d=>{
         const v = (db.days[d]?.morning ?? '').toString().trim().replace(',','.');
-        if (!v) return null;          // ✅ пропуск
+        if (!v) return null;
         const n = parseFloat(v);
         return Number.isFinite(n) ? n : null;
     });
     const evening = dates.map(d=>{
         const v = (db.days[d]?.evening ?? '').toString().trim().replace(',','.');
-        if (!v) return null;          // ✅ пропуск
+        if (!v) return null;
         const n = parseFloat(v);
         return Number.isFinite(n) ? n : null;
     });
 
     const ctx = document.getElementById('weightChart').getContext('2d');
-
-    if (weightChartInstance) {
-        weightChartInstance.destroy();
-        weightChartInstance = null;
-    }
+    if (weightChartInstance) { weightChartInstance.destroy(); weightChartInstance = null; }
 
     weightChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels,
             datasets: [
-                {
-                    label: 'Утро',
-                    data: morning,
-                    tension: 0.25,
-                    spanGaps: false,   // ✅ разрывы при null
-                    pointRadius: 3
-                },
-                {
-                    label: 'Вечер',
-                    data: evening,
-                    tension: 0.25,
-                    spanGaps: false,   // ✅ разрывы при null
-                    pointRadius: 3
-                }
+                { label: 'Утро', data: morning, tension: 0.25, spanGaps: false, pointRadius: 3 },
+                { label: 'Вечер', data: evening, tension: 0.25, spanGaps: false, pointRadius: 3 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { display: true }
-            },
-            scales: {
-                x: { ticks: { maxRotation: 0, autoSkip: true } },
-                y: { beginAtZero: false }
-            }
+            plugins: { legend: { display: true } },
+            scales: { x: { ticks: { maxRotation: 0, autoSkip: true } }, y: { beginAtZero: false } }
         }
     });
 }
-
-/* =======================
-   EXPORT
-   ======================= */
 
 function exportToExcel() {
     const data = Object.keys(db.days).map(d=>({
@@ -653,44 +577,32 @@ function exportToExcel() {
     XLSX.writeFile(wb, "Diet_Data.xlsx");
 }
 
-/* =======================
-   INIT
-   ======================= */
-
 async function init() {
     initFirebase();
 
-    // дата по умолчанию
     document.getElementById('newDateInput').value =
         new Date().toISOString().slice(0,10);
 
-    // auth listener
     if (fbAuth) {
         fbAuth.onAuthStateChanged(async (user)=>{
             const authScreen = document.getElementById('authScreen');
             const logoutBtn = document.getElementById('logoutBtn');
 
             if (user) {
-                // вошли
                 authScreen.classList.add('hidden');
                 logoutBtn.classList.remove('hidden');
 
-                // перенос со старого localStorage (если есть)
                 await migrateData();
-
-                // загрузка из облака (после миграции тоже ок)
                 await loadFromCloud();
 
-                // гарантируем сортировку библиотеки
                 renderFoodLibrary();
                 renderTable();
             } else {
-                // вышли
                 logoutBtn.classList.add('hidden');
                 authScreen.classList.remove('hidden');
-                clearAuthError();
+                // если Firebase не настроен — сообщение уже показано
+                if (firebaseReady) clearAuthError();
 
-                // очистим текущую сессию (локально в памяти)
                 db = { days: {}, library: {} };
                 activeDate = null;
                 renderFoodLibrary();
@@ -698,12 +610,10 @@ async function init() {
             }
         });
     } else {
-        // Firebase не настроен — оставим экран логина и покажем сообщение (уже показано)
         renderFoodLibrary();
         renderTable();
     }
 }
-
 init();
 </script>
 </body>
